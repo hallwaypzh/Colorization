@@ -42,3 +42,6 @@ test/.coverage
 test/data/legacy_serialized.pt
 *~
 .idea
+.vscode
+dataset/*
+tmp.py
