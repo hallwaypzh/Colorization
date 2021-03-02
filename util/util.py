@@ -352,6 +352,11 @@ def calculate_psnr_torch(img1, img2):
     return 20*torch.log10(1./torch.sqrt(cur_MSE))
 
 
+#  the following code is copyed from
+#  https://richzhang.github.io/InteractiveColorization
+#  we need these two methods to reimplement
+#  get ground truth color distribution
+
 def flatten_nd_array(pts_nd, axis=1):
     # Flatten an nd array into a 2d array with a certain axis
     # INPUTS
