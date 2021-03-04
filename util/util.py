@@ -6,6 +6,9 @@ import os
 from collections import OrderedDict
 from IPython import embed
 
+from .color_quantization import NNEncode
+from skimage import color
+
 # Converts a Tensor into an image array (numpy)
 # |imtype|: the desired type of the converted numpy array
 def tensor2im(input_image, imtype=np.uint8):
@@ -324,7 +327,7 @@ def decode_mean(data_ab_quant, opt):
     #   data_ab_inf     Nx2xHxW \in [-1,1]
 
     (N,Q,H,W) = data_ab_quant.shape
-    a_range = torch.range(-opt.ab_max, opt.ab_max, step=opt.ab_quant).to(data_ab_quant.device)[None,:,None,None]
+    a_range = torch.arange(-opt.ab_max, opt.ab_max + 1, step=opt.ab_quant).to(data_ab_quant.device)[None,:,None,None]
     a_range = a_range.type(data_ab_quant.type())
 
     # reshape to AB space
@@ -357,52 +360,62 @@ def calculate_psnr_torch(img1, img2):
 #  we need these two methods to reimplement
 #  get ground truth color distribution
 
-def flatten_nd_array(pts_nd, axis=1):
-    # Flatten an nd array into a 2d array with a certain axis
+def check_value(inds, val):
+    # Check to see if an array is a single element equaling a particular value
+    # Good for pre-processing inputs in a function
+    if(np.array(inds).size == 1):
+        if(inds == val):
+            return True
+    return False
+
+#  implement color encoding scheme 
+#  proposed in paper
+
+def encode_ab_knn(data_ab, opt):
+    # compute color distribution for each pixel
     # INPUTS
-    # 	pts_nd 		N0xN1x...xNd array
-    # 	axis 		integer
+    #   data_ab   Nx2xHxW \in [-1,1]
     # OUTPUTS
-    # 	pts_flt 	prod(N \ N_axis) x N_axis array
-    NDIM = pts_nd.ndim
-    SHP = np.array(pts_nd.shape)
-    nax = np.setdiff1d(np.arange(0, NDIM), np.array((axis)))  # non axis indices
-    print(SHP, nax)
-    NPTS = np.prod(SHP[nax])
-    print(NPTS)
-    axorder = np.concatenate((nax, np.array(axis).flatten()), axis=0)
-    
-    #pts_flt = pts_nd.transpose(axorder)
-    pts_flt = np.transpose(pts_nd, axorder)
-    pts_flt = pts_flt.reshape(NPTS, SHP[axis])
-    return pts_flt
+    #   data_enc    NxQxHxW \in [0, 1)
+    nnenc = NNEncode(10, 5)
+    data_ab_rs = data_ab * opt.ab_norm
+    return nnenc.encode_points_mtx_nd(data_ab_rs)
 
+def rgb2hsv(rgb):
+    rgb = rgb.permute((0, 2, 3, 1)).cpu().numpy()
+    hsv = color.rgb2hsv(rgb)
+    print(hsv.shape, hsv.max(), hsv.min())
+    return hsv
 
-def unflatten_2d_array(pts_flt, pts_nd, axis=1, squeeze=False):
-    # Unflatten a 2d array with a certain axis
-    # INPUTS
-    # 	pts_flt 	prod(N \ N_axis) x M array
-    # 	pts_nd 		N0xN1x...xNd array
-    # 	axis 		integer
-    # 	squeeze 	bool 	if true, M=1, squeeze it out
-    # OUTPUTS
-    # 	pts_out 	N0xN1x...xNd array
-    NDIM = pts_nd.ndim
-    SHP = np.array(pts_nd.shape)
-    nax = np.setdiff1d(np.arange(0, NDIM), np.array((axis)))  # non axis indices
+def get_global_colorization_data(data_raw, opt, ab_thresh=5., p=.125, num_points=None):
+    data = {}
 
-    if(squeeze):
-        axorder = nax
-        axorder_rev = np.argsort(axorder)
-        M = pts_flt.shape[1]
-        NEW_SHP = SHP[nax].tolist()
-        pts_out = pts_flt.reshape(NEW_SHP)
-        pts_out = pts_out.transpose(axorder_rev)
-    else:
-        axorder = np.concatenate((nax, np.array(axis).flatten()), axis=0)
-        axorder_rev = np.argsort(axorder)
-        M = pts_flt.shape[1]
-        NEW_SHP = SHP[nax].tolist()
-        NEW_SHP.append(M)
-        pts_out = pts_flt.reshape(NEW_SHP)
-        pts_out = pts_out.transpose(axorder_rev)
+    data_lab = rgb2lab(data_raw[0], opt)
+    data['A'] = data_lab[:,[0,],:,:]
+    data['B'] = data_lab[:,1:,:,:]       
+    print(rgb2hsv(data_raw[0]).shape)
+    if(ab_thresh > 0): # mask out grayscale images
+        thresh = 1.*ab_thresh/opt.ab_norm
+        mask = torch.sum(torch.abs(torch.max(torch.max(data['B'],dim=3)[0],dim=2)[0]-torch.min(torch.min(data['B'],dim=3)[0],dim=2)[0]),dim=1) >= thresh
+        data['A'] = data['A'][mask,:,:,:]
+        data['B'] = data['B'][mask,:,:,:]
+        # print('Removed %i points'%torch.sum(mask==0).numpy())
+        if(torch.sum(mask)==0):
+            return None
+
+    print(data['B'].shape)
+    #calculate histogram
+    data_q = encode_ab_ind(data['B'], opt)
+    batch_size = data['B'].shape[0]
+    tot = data_q.shape[2] * data_q.shape[3]
+    bins = torch.zeros([batch_size, 529, 1, 1]).type(torch.FloatTensor)
+    for i in range(batch_size):
+        tmp = data_q[i].unique(return_counts=True)
+        indices = tmp[0].type(torch.LongTensor).cuda()
+        cnts = tmp[1].unsqueeze(1).unsqueeze(1)
+        bins[i, indices, :, :] = cnts.type(torch.FloatTensor)
+    bins /= tot
+
+    #print((torch.index_select(bins[0], 0, indices).shape))
+    #for j, i in enumerate(tmp2): 
+    return data
