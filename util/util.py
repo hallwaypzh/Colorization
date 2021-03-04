@@ -382,18 +382,54 @@ def encode_ab_knn(data_ab, opt):
     return nnenc.encode_points_mtx_nd(data_ab_rs)
 
 def rgb2hsv(rgb):
-    rgb = rgb.permute((0, 2, 3, 1)).cpu().numpy()
+    # INPUTS
+    # rgb Nx3xHxW in range [0, 1], Tensor
+    # OUTPUTS
+    # hsv Nx3xHxW in range [0, 1], Tensor
+    rgb = np.uint8(rgb.permute((0, 2, 3, 1)).cpu().numpy() * 255)
     hsv = color.rgb2hsv(rgb)
-    print(hsv.shape, hsv.max(), hsv.min())
-    return hsv
+    hsv = np.transpose(hsv, (0, 3, 1, 2))
+    return torch.from_numpy(hsv)
+
+def add_global_hint_rand(data, sat, opt, p):
+    N, C, H, W = data['B'].shape
+    hint_s = torch.zeros([N])
+    hint_h = torch.zeros([N])
+
+    data_q = encode_ab_ind(data['B'], opt)
+    bins = torch.zeros([N, 529, 1, 1]).type(torch.FloatTensor)
+
+    for i in range(N):
+        hint_s[i] = float(np.random.rand() < (1 - p))
+        cond_h = np.random.rand() < (1 - p)
+        sat[i,:,:,:] *= hint_s[i]
+        if cond_h:
+            print("True:)")
+            hints_h[i] = float(cond_h)
+            tmp = data_q[i].unique(return_counts=True)
+            indices = tmp[0].type(torch.LongTensor).cuda()
+            cnts = tmp[1].unsqueeze(1).unsqueeze(1)
+            bins[i, indices, :, :] = cnts.type(torch.FloatTensor)
+    bins /= (H * W)
+    hint_h = hint_h.unsqueeze(1).unsqueeze(1).unsqueeze(1)
+    hint_s = hint_s.unsqueeze(1).unsqueeze(1).unsqueeze(1)
+
+    
+    
+    data['hint_B'] = torch.cat((bins, sat), dim=1).type(torch.FloatTensor)
+    data['mask_B'] = torch.cat((hint_h, hint_s), dim=1).type(torch.FloatTensor)
+    return data
+
+
+        
 
 def get_global_colorization_data(data_raw, opt, ab_thresh=5., p=.125, num_points=None):
     data = {}
 
     data_lab = rgb2lab(data_raw[0], opt)
     data['A'] = data_lab[:,[0,],:,:]
-    data['B'] = data_lab[:,1:,:,:]       
-    print(rgb2hsv(data_raw[0]).shape)
+    data['B'] = data_lab[:,1:,:,:]   
+    mask = torch.arange(0,data['B'].shape[0])
     if(ab_thresh > 0): # mask out grayscale images
         thresh = 1.*ab_thresh/opt.ab_norm
         mask = torch.sum(torch.abs(torch.max(torch.max(data['B'],dim=3)[0],dim=2)[0]-torch.min(torch.min(data['B'],dim=3)[0],dim=2)[0]),dim=1) >= thresh
@@ -403,19 +439,26 @@ def get_global_colorization_data(data_raw, opt, ab_thresh=5., p=.125, num_points
         if(torch.sum(mask)==0):
             return None
 
-    print(data['B'].shape)
-    #calculate histogram
+    #compute sataturation
+    hsv = rgb2hsv(data_raw[0][mask,:,:,:])
+    sat = torch.mean(hsv[:,1,:,:], dim=(1, 2))
+    sat = sat.unsqueeze(1).unsqueeze(1).unsqueeze(1)
+    
+    #compute histogram
+    
     data_q = encode_ab_ind(data['B'], opt)
     batch_size = data['B'].shape[0]
     tot = data_q.shape[2] * data_q.shape[3]
     bins = torch.zeros([batch_size, 529, 1, 1]).type(torch.FloatTensor)
+    '''
     for i in range(batch_size):
         tmp = data_q[i].unique(return_counts=True)
         indices = tmp[0].type(torch.LongTensor).cuda()
         cnts = tmp[1].unsqueeze(1).unsqueeze(1)
         bins[i, indices, :, :] = cnts.type(torch.FloatTensor)
     bins /= tot
+    '''
+    return add_global_hint_rand(data, sat, opt, p)
 
     #print((torch.index_select(bins[0], 0, indices).shape))
     #for j, i in enumerate(tmp2): 
-    return data
