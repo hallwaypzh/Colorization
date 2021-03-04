@@ -1,0 +1,1 @@
+python train_model.py --name siggraph_class_small --sample_p 1.0 --niter 100 --niter_decay 0 --classification --phase train_small --which_model_netG siggraphlocal
