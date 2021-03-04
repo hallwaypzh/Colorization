@@ -114,8 +114,10 @@ class Pix2PixModel(BaseModel):
         self.hint_B = input['hint_B'].to(self.device)
         self.mask_B = input['mask_B'].to(self.device)
         self.mask_B_nc = self.mask_B + self.opt.mask_cent
-
+        tmpB = self.real_B[:, :, ::4, ::4].cpu().numpy()
         self.real_B_enc = util.encode_ab_ind(self.real_B[:, :, ::4, ::4], self.opt)
+        self.real_B_nnenc = torch.from_numpy(util.encode_ab_knn(self.real_B[:, :, ::4, ::4].cpu().numpy(), self.opt)).to(self.device)
+
 
     def forward(self):
         (self.fake_B_class, self.fake_B_reg) = self.netG(self.real_A, self.hint_B, self.mask_B)
@@ -126,6 +128,7 @@ class Pix2PixModel(BaseModel):
         self.fake_B_dec_mean = self.netG.module.upsample4(util.decode_mean(self.fake_B_distr, self.opt))
 
         self.fake_B_entr = self.netG.module.upsample4(-torch.sum(self.fake_B_distr * torch.log(self.fake_B_distr + 1.e-10), dim=1, keepdim=True))
+        self.fake_B_logdistr =  torch.nn.LogSoftmax(dim=1)(self.fake_B_class)
         # embed()
 
     def backward_D(self):
@@ -153,8 +156,14 @@ class Pix2PixModel(BaseModel):
         self.loss_0 = 0  # 0 for plot
 
         # classification statistics
-        self.loss_G_CE = self.criterionCE(self.fake_B_class.type(torch.cuda.FloatTensor),
-                                          self.real_B_enc[:, 0, :, :].type(torch.cuda.LongTensor))  # cross-entropy loss
+        #self.loss_G_CE = self.criterionCE(self.fake_B_class.type(torch.cuda.FloatTensor),
+        #                                 self.real_B_enc[:, 0, :, :].type(torch.cuda.LongTensor))  # cross-entropy loss
+        
+        #tot = self.real_B_nnenc.shape[0] * self.real_B_nnenc.shape[2] * self.real_B_nnenc.shape[3]
+        #print(self.loss_G_CE)
+        #self.loss_G_CE = torch.mean(torch.sum(self.real_B_nnenc.type(torch.cuda.FloatTensor) * self.fake_B_logdistr.type(torch.cuda.LongTensor)))
+        self.loss_G_CE = torch.mean(torch.sum(-self.real_B_nnenc.type(torch.cuda.FloatTensor) * self.fake_B_logdistr, 1))
+        #print(self.loss_G_CE)
         self.loss_G_entr = torch.mean(self.fake_B_entr.type(torch.cuda.FloatTensor))  # entropy of predicted distribution
         self.loss_G_entr_hint = torch.mean(self.fake_B_entr.type(torch.cuda.FloatTensor) * self.mask_B_nc.type(torch.cuda.FloatTensor)) / mask_avg  # entropy of predicted distribution at hint points
 
