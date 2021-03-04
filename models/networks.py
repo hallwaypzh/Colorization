@@ -1073,18 +1073,18 @@ class SIGGRAPHGlobalGenerator(nn.Module):
         # input_B = [histogram, staturation] #batch_size x 529 x 1 x 1 
         # mask_B = [indicator if histogram is provided] #batch_size x 2 x 1 x 1        
         # green part in the paper
-        print(input_A.shape)
+        # print(input_A.shape)
         input_global = torch.cat((input_B, mask_B), dim=1)
         global1 = self.global_model1(input_global)
         global2 = self.global_model2(global1)
         global3 = self.global_model3(global2)
         global4 = self.global_model4(global3)
         
-        print("Global input shape: ", input_global.shape)
-        print("Global 1 shape: ", global1.shape)
-        print("Global 2 shape: ", global2.shape)
-        print("Global 3 shape: ", global3.shape)
-        print("Global 4 shape: ", global4.shape)
+        #print("Global input shape: ", input_global.shape)
+        #print("Global 1 shape: ", global1.shape)
+        #print("Global 2 shape: ", global2.shape)
+        #print("Global 3 shape: ", global3.shape)
+        #print("Global 4 shape: ", global4.shape)
         conv1_2 = self.model1(input_A)
         conv2_2 = self.model2(conv1_2[:, :, ::2, ::2])
         conv3_3 = self.model3(conv2_2[:, :, ::2, ::2])
