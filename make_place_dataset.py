@@ -9,7 +9,7 @@ parser.add_argument('--in_path', type=str, default='/data/big/dataset/')
 parser.add_argument('--out_path', type=str, default='../datasets/Place/')
 
 opt = parser.parse_args()
-orig_path = '/home/pzh/Place/places365_standard/train'
+orig_path = '/home/pzh/Place/places365_small/train'
 print('Copying ILSVRC from...[%s]' % orig_path)
 
 # Copy over part of training set (for initializer)
@@ -17,7 +17,7 @@ trn_small_path = os.path.join(opt.out_path, 'train_small')
 util.mkdirs(opt.out_path)
 util.mkdirs(trn_small_path)
 train_subdirs = os.listdir(os.path.join(opt.in_path, 'train'))
-for train_subdir in train_subdirs[:10]:
+for train_subdir in train_subdirs[:5]:
     os.symlink(os.path.join(opt.in_path, 'train', train_subdir), os.path.join(trn_small_path, train_subdir))
 print('Making small training set in...[%s]' % trn_small_path)
 
