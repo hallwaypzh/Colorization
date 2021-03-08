@@ -404,7 +404,7 @@ def add_global_hint_rand(data, sat, opt, p):
         cond_h = np.random.rand() < (1 - p)
         sat[i,:,:,:] *= hint_s[i]
         if cond_h:
-            print("True:)")
+            #print("True:)")
             hints_h[i] = float(cond_h)
             tmp = data_q[i].unique(return_counts=True)
             indices = tmp[0].type(torch.LongTensor).cuda()
