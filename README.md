@@ -1,5 +1,6 @@
 # Colorization from https://github.com/richzhang/colorization-pytorch
-
+# we implemented local hint network as well as global hint network from the paper https://arxiv.org/abs/1705.02999
+# we also tried a new sampling method
 # Interactive Deep Colorization in PyTorch
 [Project Page](https://richzhang.github.io/ideepcolor/) |  [Paper](https://arxiv.org/abs/1705.02999) | [Video](https://youtu.be/eL5ilZgM89Q) | [Talk](https://www.youtube.com/watch?v=rp5LUSbdsys) | [UI code](https://github.com/junyanz/interactive-deep-colorization/)
 
