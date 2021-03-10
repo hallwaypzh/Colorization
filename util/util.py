@@ -208,7 +208,7 @@ def get_colorization_data(data_raw, opt, ab_thresh=5., p=.125, num_points=None):
         if(torch.sum(mask)==0):
             return None
 
-    return add_color_patches_rand_gt(data, opt, p=p, num_points=num_points)
+    return add_color_patches_rand_gt(data, opt, p=p, num_points=num_points, samp=opt.samp)
 
 def add_color_patches_rand_gt(data,opt,p=.125,num_points=None,use_avg=True,samp='normal'):
 # Add random color points sampled from ground truth based on:
@@ -219,6 +219,17 @@ def add_color_patches_rand_gt(data,opt,p=.125,num_points=None,use_avg=True,samp=
 #   - if samp is 'normal', draw from N(0.5, 0.25) of image
 #   - otherwise, draw from U[0, 1] of image
     N,C,H,W = data['B'].shape
+    data_q = encode_ab_ind1(data['B'], 110, 110, 10, 23)
+    batch_bins = []
+    for j in range(N):
+        reverse_index = []
+        for i in range(529):
+            locations = torch.where(data_q[j,:,:,:] == i)
+            if len(locations[0]) == 0:
+                continue
+            else:
+                reverse_index.append(locations)
+        batch_bins.append(reverse_index)
 
     data['hint_B'] = torch.zeros_like(data['B'])
     data['mask_B'] = torch.zeros_like(data['A'])
@@ -226,6 +237,8 @@ def add_color_patches_rand_gt(data,opt,p=.125,num_points=None,use_avg=True,samp=
     for nn in range(N):
         pp = 0
         cont_cond = True
+        color_bins = batch_bins[nn]
+        tot_bins = len(color_bins)
         while(cont_cond):
             if(num_points is None): # draw from geometric
                 # embed()
@@ -241,6 +254,14 @@ def add_color_patches_rand_gt(data,opt,p=.125,num_points=None,use_avg=True,samp=
             if(samp=='normal'): # geometric distribution
                 h = int(np.clip(np.random.normal( (H-P+1)/2., (H-P+1)/4.), 0, H-P))
                 w = int(np.clip(np.random.normal( (W-P+1)/2., (W-P+1)/4.), 0, W-P))
+            # importance sampling
+            elif samp == 'importance':
+                bin_id = np.random.randint(0, tot_bins)
+                pix_id = np.random.randint(0, len(color_bins[bin_id][0]))
+                h = color_bins[bin_id][1].cpu()[pix_id]
+                w = color_bins[bin_id][2].cpu()[pix_id]
+                h = int(np.clip(h, 0, H-P))
+                w = int(np.clip(w, 0, H-P))
             else: # uniform distribution
                 h = np.random.randint(H-P+1)
                 w = np.random.randint(W-P+1)
@@ -289,6 +310,21 @@ def encode_ab_ind(data_ab, opt):
     data_ab_rs = torch.round((data_ab*opt.ab_norm + opt.ab_max)/opt.ab_quant) # normalized bin number
     data_q = data_ab_rs[:,[0],:,:]*opt.A + data_ab_rs[:,[1],:,:]
     return data_q
+
+#######################################
+#almost the same with the original one
+#don't need opt 
+#######################################
+def encode_ab_ind1(data_ab, ab_norm, ab_max, ab_quant, A):
+    # Encode ab value into an index
+    # INPUTS
+    #   data_ab   Nx2xHxW \in [-1,1]
+    # OUTPUTS
+    #   data_q    Nx1xHxW \in [0,Q)
+    data_ab_rs = torch.round((data_ab*ab_norm + ab_max)/ab_quant)
+    data_q = data_ab_rs[:,[0],:,:] * A + data_ab_rs[:,[1],:,:]
+    return data_q
+
 
 def decode_ind_ab(data_q, opt):
     # Decode index into ab value
@@ -405,7 +441,7 @@ def add_global_hint_rand(data, sat, opt, p):
         sat[i,:,:,:] *= hint_s[i]
         if cond_h:
             #print("True:)")
-            hints_h[i] = float(cond_h)
+            hint_h[i] = float(cond_h)
             tmp = data_q[i].unique(return_counts=True)
             indices = tmp[0].type(torch.LongTensor).cuda()
             cnts = tmp[1].unsqueeze(1).unsqueeze(1)
